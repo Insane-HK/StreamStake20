@@ -5,7 +5,7 @@ logger = logging.getLogger('StreamStakeOCR')
 
 class GameState:
     def __init__(self):
-        self.rounds = [] # History of rounds: {start_scores, end_scores, winner, signal}
+        self.rounds = [] 
         self.current_round = {
             'id': None,
             'start_own': -1,
@@ -14,24 +14,16 @@ class GameState:
         }
         
     def start_round(self, round_id: str, own: int, enemy: int):
-        """
-        Called when transitioning into LOCKED/BETTING when scores are stable.
-        """
-        # Only reset if we are not already active or if it's a new round ID
-        # Actually, main.py generates round_id on startup. We might want to track 'phases' instead.
-        # But assuming the bot runs continuously, we treat 'start_round' as 'locking in start scores'.
-        
         self.current_round['active'] = True
         self.current_round['id'] = round_id
         self.current_round['start_own'] = own
         self.current_round['start_enemy'] = enemy
         
-        logger.info(f"[GAME STATE] Round Started/Updated. Start Scores -> Own: {own}, Enemy: {enemy}")
+        logger.info(f"[GAME STATE] Round Started. Baseline Scores -> Own: {own}, Enemy: {enemy}")
 
     def end_round_and_get_signal(self, current_own: int, current_enemy: int, text_result: str = "") -> dict:
         """
-        Calculate winner based on score delta.
-        Returns dict with 'signal' ("WIN", "LOSS", "DRAW", "UNKNOWN") and 'method'
+        Determines winner using Score Delta first, then Text Fallback.
         """
         start_o = self.current_round['start_own']
         start_e = self.current_round['start_enemy']
@@ -39,21 +31,29 @@ class GameState:
         signal = "UNKNOWN"
         method = "NONE"
         
-        # 1. Check Score Delta (Primary Source of Truth)
+        # 1. PRIMARY CHECK: Score Delta
+        # We only trust scores if they are valid integers
         if start_o != -1 and start_e != -1 and current_own != -1 and current_enemy != -1:
-            if current_own > start_o and current_enemy == start_e:
-                signal = "WIN" # Blue Team Won
+            if current_own > start_o:
+                signal = "WIN"
                 method = "SCORE_DELTA"
-            elif current_enemy > start_e and current_own == start_o:
-                signal = "LOSS" # Red Team Won
+            elif current_enemy > start_e:
+                signal = "LOSS"
                 method = "SCORE_DELTA"
                 
-        # 2. STRICT: Only use Score Delta - User Request
-        # If score delta didn't determine a winner, we return UNKNOWN.
-        # We do NOT use templates or text fallbacks anymore.
-        
-        pass 
-        # (Templates and Text logic removed to ensure "only scores" determines result)
+        # 2. SECONDARY CHECK: Text Fallback (If scores were too slow to update)
+        if signal == "UNKNOWN" and text_result:
+            clean_text = text_result.upper()
+            
+            # Words indicating the Streamer WON
+            if any(x in clean_text for x in ["VICTORY", "WIN", "WON", "MVP", "DEFUSED"]):
+                signal = "WIN"
+                method = "TEXT_FALLBACK"
+                
+            # Words indicating the Streamer LOST
+            elif any(x in clean_text for x in ["DEFEAT", "LOSS", "LOST", "ELIMINATED", "DETONATED"]):
+                signal = "LOSS"
+                method = "TEXT_FALLBACK"
 
         # Record History
         if signal != "UNKNOWN":
@@ -65,19 +65,15 @@ class GameState:
                 'method': method
             }
             self.rounds.append(outcome)
-            
-            # Log Table
             self._log_history_table()
             
         return {'signal': signal, 'method': method}
 
     def _log_history_table(self):
         logger.info("\n" + "="*40)
-        logger.info("       MATCH SCORE HISTORY       ")
-        logger.info("="*40)
         logger.info(f"{'#':<3} | {'START':<7} | {'END':<7} | {'RESULT':<6}")
         logger.info("-" * 40)
-        for i, r in enumerate(self.rounds[-5:]): # Show last 5
+        for i, r in enumerate(self.rounds[-5:]): 
             s = f"{r['start']['own']}-{r['start']['enemy']}"
             e = f"{r['end']['own']}-{r['end']['enemy']}"
             res = r['signal']

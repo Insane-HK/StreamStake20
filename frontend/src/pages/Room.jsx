@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, MessageSquare, Activity, Plus, Minus, AlertTriangle, X, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Users, MessageSquare, Activity, Plus, Minus, AlertTriangle, X, ChevronRight, Wallet, Download } from 'lucide-react';
 import { useWallet } from '../context/WalletContext';
+import { useBetting } from '../hooks/useBetting';
 import { rtdb } from '../firebase';
 import { ref, onValue, off, push, set, query, limitToLast } from "firebase/database";
 
 const Room = () => {
-    const { walletConnected } = useWallet();
+    // 1. GET WALLET ID (Needed for betting identity)
+    const { walletConnected, walletId } = useWallet();
+
+    const { depositFunds, withdrawFunds, loading: isTransacting } = useBetting();
     const { id } = useParams();
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
@@ -16,9 +20,9 @@ const Room = () => {
     const playerRef = useRef(null);
     const [playerReady, setPlayerReady] = useState(false);
 
+    // --- VIDEO URL PARSING ---
     const getVideoId = (url) => {
         if (!url) return '';
-
         try {
             const cleanUrl = url.trim();
             const validUrl = cleanUrl.startsWith('http') ? cleanUrl : `https://${cleanUrl}`;
@@ -41,11 +45,7 @@ const Room = () => {
                 videoId = parsed.pathname.split('/live/')[1].split('?')[0];
             }
 
-            if (!videoId) {
-                console.error("Could not extract video ID from URL:", url);
-                return '';
-            }
-
+            if (!videoId) return '';
             videoId = videoId.split('&')[0].split('#')[0];
             return videoId;
         } catch (e) {
@@ -56,11 +56,11 @@ const Room = () => {
 
     const videoId = getVideoId(ytUrl);
 
-    // State
+    // --- STATE ---
     const [phase, setPhase] = useState('BETTING');
     const [scoreBlue, setScoreBlue] = useState(0);
     const [scoreRed, setScoreRed] = useState(0);
-    const [userPoints, setUserPoints] = useState(1000);
+    const [userPoints, setUserPoints] = useState(0); // Default to 0, load real balance below
     const [betAmount, setBetAmount] = useState(10);
     const [chatMessage, setChatMessage] = useState('');
     const [messages, setMessages] = useState([
@@ -70,37 +70,22 @@ const Room = () => {
 
     // --- FIREBASE LOGIC ---
     useEffect(() => {
-        // Listen for active round ID (Scoped to Lobby)
-        console.log(`[Room] Listening for active_round at: lobbies/${id}/active_round`);
         const activeRoundRef = ref(rtdb, `lobbies/${id}/active_round`);
 
         const handleActiveRound = (snapshot) => {
             const currentRoundId = snapshot.val();
-            console.log(`[Room] Active Round ID: ${currentRoundId}`);
-
             if (currentRoundId) {
-                // Listen to specific round updates (Scoped to Lobby)
                 const roundPath = `lobbies/${id}/rounds/${currentRoundId}`;
-                console.log(`[Room] Listening for round updates at: ${roundPath}`);
                 const roundRef = ref(rtdb, roundPath);
 
                 const handleRoundUpdate = (roundSnapshot) => {
                     const data = roundSnapshot.val();
-                    console.log("[Room] Received Round Data:", data);
-
                     if (data) {
-                        // Map Backend -> Frontend (New Structure)
-                        if (data.phase) {
-                            console.log(`[Room] Updating Phase: ${data.phase}`);
-                            setPhase(data.phase);
-                        }
-
+                        if (data.phase) setPhase(data.phase);
                         if (data.scores) {
-                            console.log(`[Room] Updating Scores:`, data.scores);
                             if (data.scores.own !== undefined) setScoreBlue(data.scores.own);
                             if (data.scores.enemy !== undefined) setScoreRed(data.scores.enemy);
                         } else {
-                            // Fallback
                             if (data.own_score !== undefined) setScoreBlue(data.own_score);
                             if (data.enemy_score !== undefined) setScoreRed(data.enemy_score);
                         }
@@ -114,17 +99,13 @@ const Room = () => {
 
         onValue(activeRoundRef, handleActiveRound);
 
-        // Listen for chat messages
         const chatRef = query(ref(rtdb, `lobbies/${id}/chat`), limitToLast(50));
         const handleChat = (snapshot) => {
             const data = snapshot.val();
             if (data) {
                 const messageList = Object.values(data)
                     .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
-                    .map(msg => ({
-                        user: msg.user,
-                        text: msg.text
-                    }));
+                    .map(msg => ({ user: msg.user, text: msg.text }));
                 setMessages(messageList);
             } else {
                 setMessages([{ user: 'System', text: `Welcome to Room ${id}. Waiting for comms...` }]);
@@ -133,81 +114,109 @@ const Room = () => {
 
         onValue(chatRef, handleChat);
 
+        // --- NEW: LISTEN TO USER BALANCE ---
+        if (walletId) {
+            const balanceRef = ref(rtdb, `users/${walletId.toLowerCase()}/balance`);
+            const handleBalance = (snapshot) => {
+                const bal = snapshot.val();
+                if (bal !== null) setUserPoints(bal);
+            };
+            onValue(balanceRef, handleBalance);
+            return () => {
+                off(activeRoundRef);
+                off(chatRef);
+                off(balanceRef);
+            };
+        }
+
         return () => {
             off(activeRoundRef);
             off(chatRef);
         };
-    }, [id]);
+    }, [id, walletId]);
 
-    // Redirect if wallet not connected
+    // --- WALLET CHECK ---
     useEffect(() => {
         if (!walletConnected) {
             navigate('/');
         }
     }, [walletConnected, navigate]);
 
-    // Load YouTube IFrame API
+    // --- YOUTUBE PLAYER ---
     useEffect(() => {
         if (!videoId) return;
-
-        // Check if API is already loaded
         if (window.YT && window.YT.Player) {
             initPlayer();
             return;
         }
-
-        // Load the IFrame Player API code asynchronously
         const tag = document.createElement('script');
         tag.src = 'https://www.youtube.com/iframe_api';
         const firstScriptTag = document.getElementsByTagName('script')[0];
         firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-
-        // API will call this function when ready
         window.onYouTubeIframeAPIReady = initPlayer;
-
-        return () => {
-            window.onYouTubeIframeAPIReady = null;
-        };
+        return () => { window.onYouTubeIframeAPIReady = null; };
     }, [videoId]);
 
     const initPlayer = () => {
         if (!videoId || !window.YT) return;
-
         try {
             playerRef.current = new window.YT.Player('youtube-player', {
                 videoId: videoId,
-                playerVars: {
-                    autoplay: 0,
-                    controls: 1,
-                    modestbranding: 1,
-                    rel: 0,
-                    fs: 1,
-                    playsinline: 1,
-                },
+                playerVars: { autoplay: 0, controls: 1, modestbranding: 1, rel: 0, fs: 1, playsinline: 1 },
                 events: {
-                    onReady: () => {
-                        console.log('YouTube player ready');
-                        setPlayerReady(true);
-                    },
-                    onError: (event) => {
-                        console.error('YouTube player error:', event.data);
-                    }
+                    onReady: () => setPlayerReady(true),
+                    onError: (event) => console.error('YouTube player error:', event.data)
                 }
             });
-        } catch (error) {
-            console.error('Failed to initialize YouTube player:', error);
-        }
+        } catch (error) { console.error('Failed to initialize YouTube player:', error); }
     };
 
+    // --- DEPOSIT HANDLER ---
+    const handleDeposit = async () => {
+        const amountStr = prompt("Enter amount of StreamCoin (STRM) to deposit:");
+        if (!amountStr) return;
+
+        const amount = parseFloat(amountStr);
+        if (isNaN(amount) || amount <= 0) {
+            alert("Please enter a valid amount.");
+            return;
+        }
+
+        const success = await depositFunds(amountStr);
+        // Note: We removed the optimistic update here because the Firebase listener (added above) will handle it
+    };
+
+    // --- WITHDRAW HANDLER ---
+    const handleWithdraw = async () => {
+        const amountStr = prompt(`Balance: ${userPoints} pts.\nHow much to withdraw?`);
+        if (!amountStr) return;
+
+        const amount = parseFloat(amountStr);
+        if (isNaN(amount) || amount <= 0 || amount > userPoints) {
+            alert("Invalid amount or insufficient funds.");
+            return;
+        }
+
+        const success = await withdrawFunds(amount);
+    };
+
+    // --- BETTING HANDLER (FIXED) ---
     const handleBet = (outcome) => {
         if (phase !== 'BETTING') return;
 
+        if (!walletId) {
+            alert("Wallet not connected!");
+            return;
+        }
+
         if (userPoints >= betAmount) {
+            // Optimistic update
             setUserPoints(prev => prev - betAmount);
-            // In a real app, we'd record this bet in Firebase or Smart Contract
+
             const betRef = push(ref(rtdb, `bets/${id}`));
             set(betRef, {
-                user: alias,
+                user: walletId, // <--- CRITICAL FIX: SEND WALLET ADDRESS
+                alias: alias,   // Optional: Store alias for display logic later
                 amount: betAmount,
                 outcome: outcome,
                 timestamp: Date.now()
@@ -218,31 +227,23 @@ const Room = () => {
         }
     };
 
+    // --- CHAT HANDLER ---
     const handleSendMessage = async () => {
         if (!chatMessage.trim()) return;
-
         try {
             const newMsgRef = push(ref(rtdb, `lobbies/${id}/chat`));
             await set(newMsgRef, {
-                user: alias,
+                user: alias, // Chat can still use Alias
                 text: chatMessage,
                 timestamp: Date.now()
             });
             setChatMessage('');
-        } catch (e) {
-            console.error("Failed to send message", e);
-        }
+        } catch (e) { console.error("Failed to send message", e); }
     };
 
     const messagesEndRef = React.useRef(null);
-
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    };
-
-    useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
+    const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    useEffect(() => scrollToBottom(), [messages]);
 
     return (
         <div className="h-[calc(100vh-97px)] overflow-hidden bg-[#0F1923] text-[#ECE8E1] flex flex-col">
@@ -251,17 +252,12 @@ const Room = () => {
                 <div className="flex-1 relative bg-black flex flex-col justify-center select-none">
                     {videoId ? (
                         <div className='relative w-full h-full'>
-                            <div
-                                id="youtube-player"
-                                className="w-full h-full"
-                                style={{ width: '100%', height: '100%' }}
-                            ></div>
+                            <div id="youtube-player" className="w-full h-full"></div>
                         </div>
                     ) : (
                         <div className="flex flex-col items-center justify-center h-full text-center gap-4">
                             <AlertTriangle size={48} className="text-[#FF4655]" />
                             <p className="text-[#8B978F] text-lg">No Stream Source Provided</p>
-                            <p className="text-[#8B978F] text-sm">Please create a room with a valid YouTube URL</p>
                         </div>
                     )}
 
@@ -283,6 +279,7 @@ const Room = () => {
 
                 {/* SIDEBAR INTERACTION */}
                 <div className="w-[400px] border-l border-white/10 bg-[#0F1923] flex flex-col">
+
                     {/* SIDEBAR HEADER */}
                     <div className="p-6 border-b border-white/10 bg-[#0F1923]">
                         <div className="flex items-center justify-between mb-4">
@@ -299,9 +296,47 @@ const Room = () => {
                                 <span className="font-mono text-sm">124</span>
                             </div>
                         </div>
-                        <div className="flex items-center justify-between px-4 py-3 bg-white/5 rounded-sm border border-white/5">
-                            <span className="text-[10px] font-black uppercase text-[#8B978F] tracking-widest">Balance</span>
-                            <span className="font-mono font-bold text-[#FF4655]">{userPoints} pts</span>
+
+                        {/* UPDATED BALANCE & WALLET BOX */}
+                        <div className="bg-white/5 rounded-sm border border-white/5 p-3">
+                            <div className="flex items-center justify-between mb-3">
+                                <span className="text-[10px] font-black uppercase text-[#8B978F] tracking-widest">Balance</span>
+                                <span className="font-mono font-bold text-[#FF4655]">{userPoints} pts</span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                                {/* Deposit Button */}
+                                <button
+                                    onClick={handleDeposit}
+                                    disabled={isTransacting}
+                                    className={`py-2 border text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2
+                                        ${isTransacting
+                                            ? 'bg-white/5 border-white/10 text-white/20 cursor-wait'
+                                            : 'bg-[#22D3EE]/10 border-[#22D3EE]/50 text-[#22D3EE] hover:bg-[#22D3EE] hover:text-[#0F1923]'
+                                        }`}
+                                >
+                                    <Wallet size={12} /> Deposit
+                                </button>
+
+                                {/* Withdraw Button */}
+                                <button
+                                    onClick={handleWithdraw}
+                                    disabled={isTransacting}
+                                    className={`py-2 border text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2
+                                        ${isTransacting
+                                            ? 'bg-white/5 border-white/10 text-white/20 cursor-wait'
+                                            : 'bg-[#FF4655]/10 border-[#FF4655]/50 text-[#FF4655] hover:bg-[#FF4655] hover:text-white'
+                                        }`}
+                                >
+                                    <Download size={12} /> Withdraw
+                                </button>
+                            </div>
+
+                            {isTransacting && (
+                                <div className="mt-2 text-[9px] text-center text-[#8B978F] animate-pulse font-mono uppercase tracking-wider">
+                                    // Processing Blockchain Tx...
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -399,10 +434,7 @@ const Room = () => {
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowFundsModal(false)}></div>
                     <div className="relative w-full max-w-sm bg-[#0F1923] border border-[#FF4655] p-6 shadow-[0_0_50px_rgba(255,70,85,0.2)] animate-[fadeIn_0.2s_ease-out]">
-                        <button
-                            onClick={() => setShowFundsModal(false)}
-                            className="absolute top-4 right-4 text-[#8B978F] hover:text-white transition-colors"
-                        >
+                        <button onClick={() => setShowFundsModal(false)} className="absolute top-4 right-4 text-[#8B978F] hover:text-white transition-colors">
                             <X size={20} />
                         </button>
                         <div className="flex flex-col items-center text-center">
@@ -411,13 +443,16 @@ const Room = () => {
                             </div>
                             <h3 className="text-xl font-black italic uppercase tracking-tighter mb-2">Insufficient Funds</h3>
                             <p className="text-[#8B978F] mb-6 leading-relaxed font-medium text-sm">
-                                You require more points to place this wager.
+                                You require more points to place this wager. Please deposit more crypto.
                             </p>
                             <button
-                                onClick={() => setShowFundsModal(false)}
+                                onClick={() => {
+                                    setShowFundsModal(false);
+                                    handleDeposit();
+                                }}
                                 className="w-full py-3 bg-[#FF4655] hover:bg-[#FF4655]/90 text-white font-black uppercase tracking-[0.2em] transition-all"
                             >
-                                Acknowledge
+                                Deposit Now
                             </button>
                         </div>
                     </div>
@@ -426,19 +461,11 @@ const Room = () => {
 
             <style>{`
                 .scrollbar-hide::-webkit-scrollbar { display: none; }
-                ::-webkit-scrollbar {
-                    width: 6px;
-                }
-                ::-webkit-scrollbar-track {
-                    background: #0F1923; 
-                }
-                ::-webkit-scrollbar-thumb {
-                    background: #FF4655; 
-                    border-radius: 3px;
-                }
-                ::-webkit-scrollbar-thumb:hover {
-                    background: #D93444; 
-                }
+                ::-webkit-scrollbar { width: 6px; }
+                ::-webkit-scrollbar-track { background: #0F1923; }
+                ::-webkit-scrollbar-thumb { background: #FF4655; border-radius: 3px; }
+                ::-webkit-scrollbar-thumb:hover { background: #D93444; }
+                .cursor-wait { cursor: wait; }
             `}</style>
         </div>
     );
