@@ -1,0 +1,10 @@
+mss
+pytesseract
+opencv-python
+Pillow
+numpy
+firebase-admin
+python-dotenv
+streamlink==6.5.1
+yt-dlp==2024.12.13
+playwright
