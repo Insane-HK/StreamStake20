@@ -11,7 +11,7 @@ import './index.css';
 // IMPORT THE PROVIDER
 import { WalletProvider } from './context/WalletContext';
 
-import Layout from './layout';
+import Layout from './Layout';
 import Home from './pages/Home';
 import Prediction from './pages/Prediction';
 import Room from './pages/Room';
