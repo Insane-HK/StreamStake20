@@ -155,7 +155,7 @@ withdrawQueueRef.on("child_added", async (snapshot) => {
 
         // Send Signature
         await db.ref(`withdraw_responses/${userAddress}`).set({
-            signature, amount: amountWei.toString(), nonce, timestamp: Date.now()
+            signature, amount: amountWei.toString(), nonce, timestamp: Date.now(), requestId
         });
 
         await snapshot.ref.remove();

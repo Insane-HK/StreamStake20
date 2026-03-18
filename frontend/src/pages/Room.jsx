@@ -4,7 +4,7 @@ import { ArrowLeft, Users, MessageSquare, Activity, Plus, Minus, AlertTriangle, 
 import { useWallet } from '../context/WalletContext';
 import { useBetting } from '../hooks/useBetting';
 import { rtdb } from '../firebase';
-import { ref, onValue, off, push, set, query, limitToLast } from "firebase/database";
+import { ref, onValue, off, push, set, query, limitToLast, orderByChild, equalTo, get } from "firebase/database";
 
 const Room = () => {
     // 1. GET WALLET ID (Needed for betting identity)
@@ -15,7 +15,7 @@ const Room = () => {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
 
-    const ytUrl = decodeURIComponent(searchParams.get('url') || '');
+    const [ytUrl, setYtUrl] = useState(decodeURIComponent(searchParams.get('url') || ''));
     const alias = searchParams.get('alias') || 'Guest';
     const playerRef = useRef(null);
     const [playerReady, setPlayerReady] = useState(false);
@@ -67,15 +67,91 @@ const Room = () => {
         { user: 'System', text: `Welcome to Room ${id}. Betting is OPEN.` },
     ]);
     const [showFundsModal, setShowFundsModal] = useState(false);
+    const [currentRoundId, setCurrentRoundId] = useState(null);
+    const [hasBet, setHasBet] = useState(false);
 
-    // --- FIREBASE LOGIC ---
+    // --- FIREBASE LOGIC / DEMO LOGIC ---
     useEffect(() => {
+        if (id === 'DEMO') {
+            // ============================================
+            // DEMO MODE LOOP (No Backend Needed)
+            // ============================================
+            let currentPhase = 'BETTING';
+            let bScore = 12;
+            let rScore = 11;
+            let roundCounter = 24;
+
+            setPhase(currentPhase);
+            setScoreBlue(bScore);
+            setScoreRed(rScore);
+            setUserPoints(100); // Give 100 free points
+
+            const demoLoop = setInterval(() => {
+                if (currentPhase === 'BETTING') {
+                    currentPhase = 'LOCKED';
+                    setPhase(currentPhase);
+                    setMessages(prev => [...prev, { user: 'System', text: `Round ${roundCounter} bets are now LOCKED. Good luck!` }]);
+                } 
+                else if (currentPhase === 'LOCKED') {
+                    currentPhase = 'RESULT';
+                    setPhase(currentPhase);
+                    
+                    const winner = Math.random() > 0.5 ? 'WIN' : 'LOSS';
+                    if (winner === 'WIN') bScore++; else rScore++;
+                    
+                    setScoreBlue(bScore);
+                    setScoreRed(rScore);
+                    setMessages(prev => [...prev, { user: 'System', text: `Round ${roundCounter} Winner: ${winner === 'WIN' ? 'Blue' : 'Red'} Team!` }]);
+
+                    // Payout dummy logic
+                    if (window.demoBet && window.demoBet.outcome === winner) {
+                        const winnings = window.demoBet.amount * 2;
+                        setUserPoints(prev => prev + winnings);
+                        setMessages(prev => [...prev, { user: 'System', text: `🎉 Congrats! You won ${winnings} pts!` }]);
+                    } else if (window.demoBet) {
+                        setMessages(prev => [...prev, { user: 'System', text: `❌ Bet lost.` }]);
+                    }
+
+                    setTimeout(() => {
+                        // VALORANT RULES: First to 13 wins
+                        if (bScore >= 13 || rScore >= 13) {
+                            clearInterval(demoLoop);
+                            setPhase('MATCH OVER');
+                            setMessages(prev => [...prev, { user: 'System', text: `🚩 MATCH OVER! Final Score: BLU ${bScore} - RED ${rScore}` }]);
+                            setTimeout(() => {
+                                setMessages(prev => [...prev, { user: 'System', text: `Returning to lobby...` }]);
+                                setTimeout(() => window.location.href = '/', 3000);
+                            }, 5000);
+                            return;
+                        }
+
+                        currentPhase = 'BETTING';
+                        roundCounter++;
+                        window.demoBet = null;
+                        setPhase(currentPhase);
+                        setHasBet(false);
+                        setMessages(prev => [...prev, { user: 'System', text: `Round ${roundCounter} started! Betting is OPEN.` }]);
+                    }, 5000);
+                }
+            }, 8000); // changes every 8 seconds
+
+            return () => clearInterval(demoLoop);
+        }
+
+        // ============================================
+        // FIREBASE MODE (Production)
+        // ============================================
         const activeRoundRef = ref(rtdb, `lobbies/${id}/active_round`);
 
         const handleActiveRound = (snapshot) => {
-            const currentRoundId = snapshot.val();
-            if (currentRoundId) {
-                const roundPath = `lobbies/${id}/rounds/${currentRoundId}`;
+            const rId = snapshot.val();
+            if (rId) {
+                // RESET HAS BET IF ROUND CHANGED
+                if (rId !== currentRoundId) {
+                    setHasBet(false);
+                    setCurrentRoundId(rId);
+                }
+                const roundPath = `lobbies/${id}/rounds/${rId}`;
                 const roundRef = ref(rtdb, roundPath);
 
                 const handleRoundUpdate = (roundSnapshot) => {
@@ -135,12 +211,25 @@ const Room = () => {
         };
     }, [id, walletId]);
 
+    // --- SYNC STREAM URL ---
+    useEffect(() => {
+        if (id === 'DEMO') return;
+        const streamRef = ref(rtdb, `lobbies/${id}/streamUrl`);
+        const handleStreamUrl = (snapshot) => {
+            const url = snapshot.val();
+            if (url) setYtUrl(url);
+        };
+        onValue(streamRef, handleStreamUrl);
+        return () => off(streamRef);
+    }, [id]);
+
     // --- WALLET CHECK ---
     useEffect(() => {
+        if (id === 'DEMO') return; // Skip wallet check for demo
         if (!walletConnected) {
             navigate('/');
         }
-    }, [walletConnected, navigate]);
+    }, [walletConnected, navigate, id]);
 
     // --- YOUTUBE PLAYER ---
     useEffect(() => {
@@ -173,6 +262,13 @@ const Room = () => {
 
     // --- DEPOSIT HANDLER ---
     const handleDeposit = async () => {
+        if (id === 'DEMO') {
+            const amountStr = prompt("Enter amount of Demo Tokens to deposit:");
+            const amount = parseFloat(amountStr);
+            if (amount > 0) setUserPoints(prev => prev + amount);
+            return;
+        }
+
         const amountStr = prompt("Enter amount of StreamCoin (STRM) to deposit:");
         if (!amountStr) return;
 
@@ -188,6 +284,16 @@ const Room = () => {
 
     // --- WITHDRAW HANDLER ---
     const handleWithdraw = async () => {
+        if (id === 'DEMO') {
+            const amountStr = prompt(`Balance: ${userPoints} pts.\nHow much to withdraw?`);
+            const amount = parseFloat(amountStr);
+            if (amount > 0 && amount <= userPoints) {
+                setUserPoints(prev => prev - amount);
+                alert(`Successfully withdrew ${amount} Demo Tokens!`);
+            }
+            return;
+        }
+
         const amountStr = prompt(`Balance: ${userPoints} pts.\nHow much to withdraw?`);
         if (!amountStr) return;
 
@@ -201,25 +307,71 @@ const Room = () => {
     };
 
     // --- BETTING HANDLER (FIXED) ---
-    const handleBet = (outcome) => {
+    const handleBet = async (outcome) => {
         if (phase !== 'BETTING') return;
+
+        if (id === 'DEMO') {
+            if (userPoints >= betAmount) {
+                setUserPoints(prev => prev - betAmount);
+                setHasBet(true);
+                window.demoBet = { outcome, amount: betAmount };
+                setMessages(prev => [...prev, { user: 'System', text: `You bet ${betAmount} on ${outcome}` }]);
+            } else {
+                setShowFundsModal(true);
+            }
+            return;
+        }
 
         if (!walletId) {
             alert("Wallet not connected!");
             return;
         }
 
+        // ONE BET PER ROUND CHECK
+        if (currentRoundId) {
+            // Basic client-side check (can be bypassed, but good UX)
+            // We need to check if we already have a bet for this round.
+            // Since we don't have a local list of "my bets", we query Firebase.
+            // Note: Better would be to subscribe to "my_bets" but for now we query.
+            try {
+                const betsRef = ref(rtdb, `bets/${id}`);
+                const q = query(betsRef, orderByChild('user'), equalTo(walletId)); // Requires user index
+                // Just fetch all bets for this lobby to verify (snapshot is small usually)
+                // Alternatively perform check:
+                const snapshot = await get(query(ref(rtdb, `bets/${id}`), orderByChild('user'), equalTo(walletId)));
+
+                let alreadyBet = false;
+                if (snapshot.exists()) {
+                    snapshot.forEach(child => {
+                        if (child.val().roundId === currentRoundId) alreadyBet = true;
+                    });
+                }
+
+                if (alreadyBet) {
+                    setHasBet(true); // Sync state if found
+                    alert("You have already placed a bet for this round!");
+                    return;
+                }
+            } catch (e) {
+                console.error("Bet check failed", e);
+            }
+        }
+
+        if (hasBet) return; // double check
+
         if (userPoints >= betAmount) {
             // Optimistic update
             setUserPoints(prev => prev - betAmount);
+            setHasBet(true); // Lock buttons immediately
 
             const betRef = push(ref(rtdb, `bets/${id}`));
             set(betRef, {
-                user: walletId, // <--- CRITICAL FIX: SEND WALLET ADDRESS
-                alias: alias,   // Optional: Store alias for display logic later
+                user: walletId,
+                alias: alias,
                 amount: betAmount,
                 outcome: outcome,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                roundId: currentRoundId || 'unknown'
             });
             setMessages(prev => [...prev, { user: 'System', text: `You bet ${betAmount} on ${outcome}` }]);
         } else {
@@ -230,6 +382,24 @@ const Room = () => {
     // --- CHAT HANDLER ---
     const handleSendMessage = async () => {
         if (!chatMessage.trim()) return;
+
+        if (id === 'DEMO') {
+            setMessages(prev => [...prev, { user: alias, text: chatMessage }]);
+            setChatMessage('');
+            // Simulate random responses
+            if (Math.random() > 0.5) {
+                setTimeout(() => {
+                    const bots = ['TenZ_Fanboy', 'ViperMain', 'ClutchKing'];
+                    const msgs = ['nice prediction!', 'idk i think they push C', 'rip my economy'];
+                    setMessages(prev => [...prev, { 
+                        user: bots[Math.floor(Math.random()*bots.length)], 
+                        text: msgs[Math.floor(Math.random()*msgs.length)] 
+                    }]);
+                }, 1500);
+            }
+            return;
+        }
+
         try {
             const newMsgRef = push(ref(rtdb, `lobbies/${id}/chat`));
             await set(newMsgRef, {
@@ -348,20 +518,20 @@ const Room = () => {
 
                         <div className="grid grid-cols-2 gap-4 mb-4">
                             <button
-                                disabled={phase !== 'BETTING'}
+                                disabled={phase !== 'BETTING' || hasBet}
                                 onClick={() => handleBet('WIN')}
                                 className={`py-6 border-2 border-[#22D3EE]/20 bg-[#22D3EE]/5 hover:bg-[#22D3EE]/10 transition-all uppercase font-black italic text-xl tracking-tighter
-                                    ${phase !== 'BETTING' ? 'opacity-50 cursor-not-allowed grayscale' : 'hover:border-[#22D3EE]'} text-[#22D3EE]`}
+                                    ${phase !== 'BETTING' || hasBet ? 'opacity-50 cursor-not-allowed grayscale' : 'hover:border-[#22D3EE]'} text-[#22D3EE]`}
                             >
-                                Bet Win
+                                {hasBet ? 'Bet Placed' : 'Bet Win'}
                             </button>
                             <button
-                                disabled={phase !== 'BETTING'}
+                                disabled={phase !== 'BETTING' || hasBet}
                                 onClick={() => handleBet('LOSS')}
                                 className={`py-6 border-2 border-[#FF4655]/20 bg-[#FF4655]/5 hover:bg-[#FF4655]/10 transition-all uppercase font-black italic text-xl tracking-tighter
-                                    ${phase !== 'BETTING' ? 'opacity-50 cursor-not-allowed grayscale' : 'hover:border-[#FF4655]'} text-[#FF4655]`}
+                                    ${phase !== 'BETTING' || hasBet ? 'opacity-50 cursor-not-allowed grayscale' : 'hover:border-[#FF4655]'} text-[#FF4655]`}
                             >
-                                Bet Loss
+                                {hasBet ? 'Bet Placed' : 'Bet Loss'}
                             </button>
                         </div>
 

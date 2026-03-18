@@ -32,7 +32,9 @@ const Home = () => {
         try {
             const snapshot = await get(ref(rtdb, `lobbies/${joinLobbyId.toUpperCase()}`));
             if (snapshot.exists()) {
-                navigate(`/room/${joinLobbyId.toUpperCase()}`);
+                const data = snapshot.val();
+                const urlParam = data.streamUrl ? `?url=${encodeURIComponent(data.streamUrl)}` : '';
+                navigate(`/room/${joinLobbyId.toUpperCase()}${urlParam}`);
             } else {
                 alert("Lobby not found. Please check the ID.");
             }
@@ -139,6 +141,21 @@ const Home = () => {
                                         </span>
                                     </button>
                                 </div>
+                            </div>
+
+                            {/* DEMO MODE BUTTON */}
+                            <div className="mt-4">
+                                <button
+                                    onClick={() => navigate('/room/DEMO?url=https://www.youtube.com/watch?v=e_E9W2vsRbQ&alias=Recruiter')}
+                                    className="relative h-14 w-full bg-transparent border-2 border-white text-white font-black uppercase tracking-[0.2em] text-lg transition-all duration-0 hover:bg-white hover:text-black overflow-hidden group"
+                                >
+                                    <div className="absolute inset-0 bg-white translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-in-out"></div>
+                                    <span className="relative z-10 flex items-center justify-center gap-2">
+                                        <Play size={20} />
+                                        <span>Showcase Demo Mode</span>
+                                    </span>
+                                </button>
+                                <p className="text-[10px] text-center text-[#8B978F] mt-2 font-mono uppercase tracking-widest">No Backend Required • Simulated Live Match</p>
                             </div>
 
                             {/* JOIN LOBBY FORM */}

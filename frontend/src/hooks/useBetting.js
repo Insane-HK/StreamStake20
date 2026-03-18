@@ -47,7 +47,14 @@ export const useBetting = () => {
             const { token, vault } = await getContracts();
             const weiAmount = ethers.parseUnits(amountStr.toString(), 18);
 
-            // A. Check Allowance
+            // A1. Check Token Balance
+            const balance = await token.balanceOf(walletId);
+            if (balance < weiAmount) {
+                alert(`Insufficient Balance! You have ${ethers.formatUnits(balance, 18)} tokens but are trying to deposit ${amountStr}.`);
+                return false;
+            }
+
+            // A2. Check Allowance
             const allowance = await token.allowance(walletId, VAULT_ADDRESS);
             if (allowance < weiAmount) {
                 console.log("Requesting Approval...");

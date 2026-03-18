@@ -1,6 +1,6 @@
 // src/config/contracts.js
 
-export const TOKEN_ADDRESS = "0xd9145CCE52D386f254917e481eB44e9943F39138";
+export const TOKEN_ADDRESS = "0xD46FD6d0f0A6360fA3E6fdF4C026eCE8eD1711FA";
 export const VAULT_ADDRESS = "0xbC54b65B87Dd9E47549c29056eBde38fBa47ba10";
 
 export const ERC20_ABI = [
