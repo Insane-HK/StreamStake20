@@ -1,7 +1,9 @@
 # StreamStake20 Project Report
 
 ## 1. Overview
-**StreamStake20** is an innovative Web3 betting platform that integrates real-time optical character recognition (OCR) with live gaming streams. Designed for competitive games like Valorant, CS2, and League of Legends, the platform enables viewers to place stakes on live matches. By bridging off-chain game state analysis with on-chain settlement, StreamStake20 offers a seamless, decentralized, and engaging betting experience for gaming enthusiasts.
+**StreamStake20** is an innovative Web3 betting platform that integrates real-time optical character recognition (OCR) with live gaming streams. Designed for competitive games like Valorant, CS2, and League of Legends, the platform enables viewers to place stakes on live matches. By bridging off-chain game state analysis with on-chain settlement, StreamStake20 offers a seamless, decentralized, and engaging betting experience for gaming enthusiasts. 
+
+🏆 **Awarded 3rd Place at [LNMHacks 8.0](https://dorahacks.io/hackathon/lnmhacks8/buidl) among top competitive blockchain projects.**
 
 ## 2. System Architecture
 The system consists of four primary components working in tandem to deliver real-time betting capabilities:
