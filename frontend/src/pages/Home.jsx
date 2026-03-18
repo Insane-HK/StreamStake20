@@ -208,7 +208,7 @@ const Home = () => {
                             <div className="flex items-center justify-between mb-8">
                                 <div className="flex items-center gap-3">
                                     <div className="w-8 h-1 bg-[#FF4655]" />
-                                    <span className="text-[10px] font-mono font-black text-[#FF4655] tracking-[0.4em] uppercase">Status: 12-11</span>
+                                    <span className="text-[10px] font-mono font-black text-[#FF4655] tracking-[0.4em] uppercase">Status: 5-6</span>
                                 </div>
                                 <Activity size={16} className="text-[#8B978F] animate-pulse" />
                             </div>

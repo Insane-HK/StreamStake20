@@ -77,9 +77,9 @@ const Room = () => {
             // DEMO MODE LOOP (No Backend Needed)
             // ============================================
             let currentPhase = 'BETTING';
-            let bScore = 12;
-            let rScore = 11;
-            let roundCounter = 24;
+            let bScore = 5;
+            let rScore = 6;
+            let roundCounter = 12;
 
             setPhase(currentPhase);
             setScoreBlue(bScore);
@@ -435,7 +435,7 @@ const Room = () => {
                     <div className="absolute top-8 left-1/2 -translate-x-1/2 flex items-center gap-8 bg-[#0F1923]/90 px-8 py-4 border-b-2 border-[#FF4655] shadow-lg backdrop-blur-sm pointer-events-none select-none z-[50]">
                         <span className="text-4xl font-black italic text-[#22D3EE]">{scoreBlue}</span>
                         <div className="flex flex-col items-center">
-                            <span className="text-[10px] font-bold uppercase text-[#8B978F] tracking-[0.2em] mb-1">Round 12</span>
+                            <span className="text-[10px] font-bold uppercase text-[#8B978F] tracking-[0.2em] mb-1">Live Round</span>
                             <div className="flex items-center gap-2">
                                 {phase === 'BETTING' && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>}
                                 <span className={`font-black uppercase tracking-widest ${phase === 'BETTING' ? 'text-green-500' : 'text-[#FF4655]'}`}>
