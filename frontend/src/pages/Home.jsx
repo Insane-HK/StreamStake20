@@ -100,8 +100,21 @@ const Home = () => {
                 <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-16 items-center">
 
                     <div className="relative">
-                        <div className="inline-flex items-center gap-3 px-4 py-1.5 bg-[#FF4655]/10 border-l-2 border-[#FF4655] mb-8">
-                            <span className="text-[10px] font-black uppercase tracking-[0.4em] text-[#FF4655]">Analyzing Match Point</span>
+                        <div className="flex flex-col gap-3 mb-8">
+                            {/* NEW: Hackathon Winner Badge */}
+                            <a 
+                                href="https://dorahacks.io/hackathon/lnmhacks8/buidl"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-3 px-4 py-2 bg-[#FFD700]/10 border border-[#FFD700]/30 hover:bg-[#FFD700]/20 transition-all rounded-sm self-start group cursor-pointer"
+                            >
+                                <span className="text-[#FFD700]"><Trophy size={16} className="group-hover:scale-110 transition-transform" /></span>
+                                <span className="text-[11px] font-black uppercase tracking-[0.3em] text-[#FFD700]">3rd Place Winner @ LNMHacks 8.0</span>
+                            </a>
+
+                            <div className="inline-flex items-center gap-3 px-4 py-1.5 bg-[#FF4655]/10 border-l-2 border-[#FF4655] self-start">
+                                <span className="text-[10px] font-black uppercase tracking-[0.4em] text-[#FF4655]">Analyzing Match Point</span>
+                            </div>
                         </div>
 
                         <h1 className="font-black uppercase italic leading-[0.85] mb-8 text-7xl lg:text-9xl tracking-tight">
